@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data (keep gitkeeps, ignore actual data files)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+*.csv
+*.json
+*.parquet
+*.feather
+
+# Models
+models/ml_classification/saved_models/*
+!models/ml_classification/saved_models/.gitkeep
+models/computer_vision/saved_models/*
+!models/computer_vision/saved_models/.gitkeep
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets & credentials
+.env
+*.key
+credentials.json
+secrets.toml
+.streamlit/secrets.toml
+
+# Logs
+*.log
+logs/
+
+# Distribution
+dist/
+build/
+*.egg-info/

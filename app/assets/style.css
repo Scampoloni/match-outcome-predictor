@@ -1,0 +1,26 @@
+/* Custom Streamlit styling for Match Outcome Predictor */
+
+[data-testid="stAppViewContainer"] {
+    background-color: #f8f9fa;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #1a1a2e;
+    color: white;
+}
+
+[data-testid="stSidebar"] .stRadio label {
+    color: #e0e0e0;
+    font-size: 1.05rem;
+}
+
+h1, h2, h3 {
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.stMetric {
+    background: white;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}

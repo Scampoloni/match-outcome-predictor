@@ -1,0 +1,36 @@
+name: Deploy to Streamlit Cloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── CI: run tests ────────────────────────────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  # ── Deployment note ──────────────────────────────────────────────────────────
+  # Streamlit Cloud deploys automatically from the main branch.
+  # No additional deploy step is needed here.
+  # Configure at: https://share.streamlit.io
+  # Entry point: app/streamlit_app.py
