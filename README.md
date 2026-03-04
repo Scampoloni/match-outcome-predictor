@@ -80,16 +80,29 @@ cp .env.example .env
 # 3. Collect match data
 python data/scrapers/collect_matches.py
 
-# 4. Collect news articles
+# 4. Preprocess & compute features (ELO, form, rest days etc.)
+python data/scrapers/build_features.py
+
+# 5. Collect news articles
 python data/scrapers/collect_news.py
 
-# 5. Run NLP pipeline
+# 6. Run NLP pipeline (sentiment analysis)
 python models/nlp_analysis/sentiment_analyzer.py
 
-# 6. Train ML models
-python models/ml_classification/train.py
+# 7. Compare NLP models (DistilBERT vs RoBERTa)
+python models/nlp_analysis/compare_models.py
 
-# 7. Launch Streamlit app
+# 8. Merge all features
+python models/nlp_analysis/feature_extractor.py
+
+# 9. Train ML models (with and without NLP for ablation)
+python models/ml_classification/train.py
+python models/ml_classification/train.py --no-nlp
+
+# 10. Evaluate models
+python models/ml_classification/evaluate.py
+
+# 11. Launch Streamlit app
 streamlit run app/streamlit_app.py
 ```
 

@@ -234,20 +234,31 @@ def build_feature_matrix(matches_path: Path, nlp_path: Path) -> pd.DataFrame:
 
 def main():
     parser = argparse.ArgumentParser(description="Build final match feature matrix.")
-    parser.add_argument("--matches", type=Path, default=PROCESSED_DIR / "matches.csv")
+    parser.add_argument("--matches", type=Path, default=None)
     parser.add_argument("--nlp", type=Path, default=PROCESSED_DIR / "nlp_features.csv")
     args = parser.parse_args()
 
-    if not args.matches.exists():
+    # Determine matches file: prefer processed, fallback to raw
+    if args.matches is not None:
+        matches_path = args.matches
+    elif (PROCESSED_DIR / "matches.csv").exists():
+        matches_path = PROCESSED_DIR / "matches.csv"
+    elif (RAW_DIR / "matches_raw.csv").exists():
+        matches_path = RAW_DIR / "matches_raw.csv"
+        log.warning(
+            "Using raw matches file (no preprocessing applied). "
+            "For best results, run: python data/scrapers/build_features.py"
+        )
+    else:
         log.error(
-            "Match data not found at %s.\n"
-            "Run: python data/scrapers/collect_matches.py\n"
-            "Then check data/processed/matches.csv exists.",
-            args.matches,
+            "Match data not found.\n"
+            "Step 1: python data/scrapers/collect_matches.py\n"
+            "Step 2: python data/scrapers/build_features.py\n"
+            "Step 3: python models/nlp_analysis/feature_extractor.py"
         )
         return
 
-    build_feature_matrix(args.matches, args.nlp)
+    build_feature_matrix(matches_path, args.nlp)
 
 
 if __name__ == "__main__":
