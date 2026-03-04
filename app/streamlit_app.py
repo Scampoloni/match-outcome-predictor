@@ -6,9 +6,19 @@ Run with:
 """
 
 import sys
+import os
 from pathlib import Path
 
 import streamlit as st
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configure Gemini
+if os.getenv("GEMINI_API_KEY"):
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
 
 # Allow imports from app/ and models/
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -16,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "models" / "ml_clas
 
 from utils import (
     load_match_data,
-    get_all_teams,
+    get_current_teams,
+    get_team_id_mapping,
     predict_match_outcome,
     load_model,
     LABEL_COLORS,
@@ -29,6 +40,9 @@ from visualizations import (
     feature_importance_bar,
     ablation_comparison,
 )
+from live_features import build_live_features
+from live_news import calculate_match_sentiment
+from rag_system import find_teams_in_query, build_gemini_context, call_gemini_api
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -38,12 +52,87 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Custom CSS for Wow Effect ──────────────────────────────────────────────────
+st.markdown("""
+<style>
+    /* Global styling */
+    .stApp {
+        background: radial-gradient(circle at 10% 20%, rgb(14, 26, 40) 0%, rgb(4, 8, 15) 100%);
+        color: #e0e0e0;
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        background: -webkit-linear-gradient(45deg, #00d2ff 0%, #3a7bd5 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-family: 'Inter', sans-serif;
+        font-weight: 800;
+    }
+
+    /* Metric cards styling and animation */
+    div[data-testid="metric-container"] {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 15px;
+        backdrop-filter: blur(10px);
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 210, 255, 0.2);
+        border-color: rgba(0, 210, 255, 0.4);
+    }
+    
+    /* Button styling */
+    div.stButton > button {
+        background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        padding: 10px 24px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        box-shadow: 0 5px 15px rgba(0, 210, 255, 0.4);
+        transform: scale(1.02);
+    }
+    
+    /* Sidebar styling */
+    section[data-testid="stSidebar"] {
+        background-color: rgba(10, 15, 25, 0.95) !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    /* Chat bubbles */
+    div[data-testid="stChatMessage"] {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 15px;
+        padding: 15px;
+        margin-bottom: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    /* Match label header */
+    .match-header {
+        text-align: center;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 30px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Sidebar navigation ────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚽ Match Predictor")
     page = st.radio(
         "Navigate",
-        ["🔍 Match Prediction", "📊 Model Insights", "ℹ️ About"],
+        ["🔍 Match Prediction", "💬 AI Assistant", "📊 Model Insights", "ℹ️ About"],
         label_visibility="collapsed",
     )
 
@@ -55,21 +144,28 @@ if page == "🔍 Match Prediction":
     st.title("🔍 Match Outcome Prediction")
     st.caption("Select home and away teams to get an AI-powered match outcome prediction with NLP-based media analysis.")
 
-    # Team selection
-    all_teams = get_all_teams()
-    col_home, col_away = st.columns(2)
-    with col_home:
-        if all_teams:
-            home_team = st.selectbox("Home Team", options=[""] + all_teams, key="home",
-                                     format_func=lambda x: "Select home team..." if x == "" else x)
-        else:
-            home_team = st.text_input("Home Team", placeholder="e.g. Arsenal FC")
-    with col_away:
-        if all_teams:
-            away_team = st.selectbox("Away Team", options=[""] + all_teams, key="away",
-                                     format_func=lambda x: "Select away team..." if x == "" else x)
-        else:
-            away_team = st.text_input("Away Team", placeholder="e.g. Chelsea FC")
+    # Team selection via live API categorized by League
+    all_teams_dict = get_current_teams()
+    
+    # Flatten teams list for basic searching if needed
+    flat_teams = []
+    for league, teams in all_teams_dict.items():
+        flat_teams.extend(teams)
+    flat_teams = sorted(list(set(flat_teams)))
+
+    # Create UI for grouped selection (Leagues)
+    col_home_league, col_home_team = st.columns(2)
+    col_away_league, col_away_team = st.columns(2)
+    
+    with col_home_league:
+        home_league = st.selectbox("Home League", options=list(all_teams_dict.keys()), key="home_league")
+    with col_home_team:
+        home_team = st.selectbox("Home Team", options=all_teams_dict[home_league] if home_league else [], key="home")
+        
+    with col_away_league:
+        away_league = st.selectbox("Away League", options=list(all_teams_dict.keys()), key="away_league")
+    with col_away_team:
+        away_team = st.selectbox("Away Team", options=all_teams_dict[away_league] if away_league else [], key="away")
 
     col_model, col_nlp = st.columns(2)
     with col_model:
@@ -83,12 +179,32 @@ if page == "🔍 Match Prediction":
         if home_team == away_team:
             st.error("Home and away team must be different.")
         else:
-            with st.spinner(f"Predicting {home_team} vs {away_team}..."):
-                match_row = load_match_data(home_team, away_team)
+            with st.spinner(f"Predicting {home_team} vs {away_team} using Live Data..."):
+                st.session_state.prediction_done = True
+                st.session_state.home_team = home_team
+                st.session_state.away_team = away_team
+                
+                # Load Live Features and Match ID
+                mapping = get_team_id_mapping()
+                h_id = mapping.get(home_team, 0)
+                a_id = mapping.get(away_team, 0)
+                
+                features_dict = build_live_features(h_id, a_id, home_team, away_team)
+                
+                # Load Live Sentiment (last 48h)
+                news_nlp = calculate_match_sentiment(home_team, away_team)
+                if news_nlp["data_available"]:
+                    for k, v in news_nlp.items():
+                        if k in features_dict:
+                            features_dict[k] = v
+                
+                import pandas as pd
+                match_row = pd.Series(features_dict)
+                match_row["home_team"] = home_team
+                match_row["away_team"] = away_team
 
             if match_row is None:
-                st.error("Match data not found. Run the data pipeline first.")
-                st.info("Run: `python data/scrapers/collect_matches.py` then `python models/nlp_analysis/feature_extractor.py`")
+                pass # Safe to remove the fallback legacy block, live mapping always returns a dict
             else:
                 prediction = predict_match_outcome(match_row, model_name=model_choice, use_nlp=use_nlp)
 
@@ -96,10 +212,15 @@ if page == "🔍 Match Prediction":
                 st.divider()
                 label = prediction.get("label", "Unknown")
                 color = LABEL_COLORS.get(label, "#ccc")
+                
+                # Use custom styled match header
                 st.markdown(
-                    f"## {home_team} vs {away_team} &nbsp; "
-                    f"<span style='background:{color};padding:4px 12px;border-radius:12px;"
-                    f"color:white;font-size:0.85em'>{label}</span>",
+                    f"<div class='match-header'>"
+                    f"<h2 style='text-align: center; margin-bottom: 10px;'>{home_team} vs {away_team}</h2>"
+                    f"<span style='background:{color};padding:8px 24px;border-radius:20px;"
+                    f"color:white;font-size:1.2em;font-weight:bold;box-shadow:0 4px 6px rgba(0,0,0,0.1)'>"
+                    f"AI Prediction: {label}</span>"
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -142,10 +263,19 @@ if page == "🔍 Match Prediction":
                 st.subheader("📰 Pre-Match Media Sentiment")
                 sent_home = match_row.get("sentiment_mean_home")
                 sent_away = match_row.get("sentiment_mean_away")
-                if sent_home is not None and str(sent_home) != "nan":
+                
+                import math
+                def is_valid(val):
+                    if val is None: return False
+                    try: return not math.isnan(float(val))
+                    except: return False
+                
+                has_sentiment = news_nlp["data_available"]
+                
+                if has_sentiment:
                     st.plotly_chart(
                         sentiment_comparison(
-                            float(sent_home), float(sent_away),
+                            float(news_nlp.get("sentiment_mean_home", 0)), float(news_nlp.get("sentiment_mean_away", 0)),
                             home_team, away_team,
                         ),
                         use_container_width=True,
@@ -153,18 +283,18 @@ if page == "🔍 Match Prediction":
                     nlp_cols = st.columns(2)
                     with nlp_cols[0]:
                         st.markdown(f"**{home_team}**")
-                        st.metric("Sentiment", f"{match_row.get('sentiment_mean_home', 0):.3f}")
-                        st.metric("Confidence", f"{match_row.get('confidence_score_home', 0):.3f}")
-                        st.metric("Injury Concern", f"{match_row.get('injury_concern_score_home', 0):.3f}")
+                        st.metric("Sentiment", f"{float(news_nlp.get('sentiment_mean_home', 0)):.3f}")
+                        st.metric("Confidence", f"{float(news_nlp.get('confidence_score_home', 0)):.3f}")
+                        st.metric("Injury Concern", f"{float(news_nlp.get('injury_concern_score_home', 0)):.3f}")
                     with nlp_cols[1]:
                         st.markdown(f"**{away_team}**")
-                        st.metric("Sentiment", f"{match_row.get('sentiment_mean_away', 0):.3f}")
-                        st.metric("Confidence", f"{match_row.get('confidence_score_away', 0):.3f}")
-                        st.metric("Injury Concern", f"{match_row.get('injury_concern_score_away', 0):.3f}")
-                    st.metric("Sentiment Gap (Home − Away)", f"{match_row.get('sentiment_gap', 0):.3f}")
-                    st.metric("Hype Level", f"{match_row.get('hype_level', 0):.3f}")
+                        st.metric("Sentiment", f"{float(news_nlp.get('sentiment_mean_away', 0)):.3f}")
+                        st.metric("Confidence", f"{float(news_nlp.get('confidence_score_away', 0)):.3f}")
+                        st.metric("Injury Concern", f"{float(news_nlp.get('injury_concern_score_away', 0)):.3f}")
+                    st.metric("Sentiment Gap (Home − Away)", f"{float(news_nlp.get('sentiment_gap', 0)):.3f}")
+                    st.metric("Hype Level", f"{float(news_nlp.get('hype_level', 0)):.3f}")
                 else:
-                    st.info("No NLP features available for this match. Run the sentiment analyzer first.")
+                    st.warning("⚠️ Keine aktuellen News gefunden – Vorhersage basiert rein auf Statistik")
 
                 # ── Section D: AI reasoning ───────────────────────────────────
                 st.subheader("🤖 AI Reasoning")
@@ -196,6 +326,101 @@ if page == "🔍 Match Prediction":
                     reasoning.append("Standard prediction based on team statistics and form.")
                 for r in reasoning:
                     st.write(f"• {r}")
+                    
+    # Bottom page integrated Chat
+    if st.session_state.get("prediction_done"):
+        st.divider()
+        st.subheader("💬 Frag die KI zu diesem Spiel")
+        
+        if "main_chat" not in st.session_state:
+            st.session_state.main_chat = []
+            
+        for msg in st.session_state.main_chat:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+        if prompt := st.chat_input("z.B. 'Warum wird Bayern favorisiert?'"):
+            context = build_gemini_context(st.session_state.home_team, st.session_state.away_team)
+            
+            st.session_state.main_chat.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+                
+            with st.chat_message("assistant"):
+                with st.spinner("Analysiere Daten..."):
+                    resp = call_gemini_api(context, prompt, st.session_state.main_chat[:-1])
+                    st.markdown(resp)
+                    st.session_state.main_chat.append({"role": "assistant", "content": resp})
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 1.5: AI Assistant
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "💬 AI Assistant":
+    st.title("💬 Football AI Assistant")
+    st.caption("Ask anything about upcoming matches! e.g., 'Who will win Juventus vs Napoli on 05.03.2026?'")
+
+    if not os.getenv("GEMINI_API_KEY"):
+        st.warning("⚠️ GEMINI_API_KEY is missing in your .env file. The chat feature requires it.")
+        st.info("Retrieve an API key from Google AI Studio and add `GEMINI_API_KEY=your-key` to your `.env` file.")
+    else:
+        # Initialize chat history
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+            # Add a system prompt instructing the model
+            st.session_state.messages.append({
+                "role": "model",
+                "content": "Hi! I'm your Match Predictor AI. You can ask me about matches, predictions, or football stats. Try asking: 'Wer gewinnt Juventus gegen Napoli?'"
+            })
+
+        # Display chat history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Chat input
+        if prompt := st.chat_input("Ask something (e.g., 'Juventus vs Napoli on 05.03.2026?'):"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("model"):
+                with st.spinner("Thinking..."):
+                    try:
+                        # Extract teams using RapidFuzz
+                        t1, t2 = find_teams_in_query(prompt)
+                        
+                        system_context = (
+                            "You are a football prediction AI assistant integrated into a Match Outcome Predictor app. "
+                            "You ONLY answer questions relating to football, match predictions, and statistics. If asked about unrelated topics, politely decline. "
+                            "Answer in the user's language (e.g. German if they type German)."
+                        )
+                        
+                        if t1 and t2:
+                            data_context = build_gemini_context(t1, t2)
+                        elif t1:
+                            data_context = f"\n[SYSTEM DATA CONTEXT] I see you mentioned {t1}. I need two valid teams from my list to predict a Matchup. Ask user to provide the other team."
+                        else:
+                            data_context = "\n[SYSTEM DATA CONTEXT] No valid teams recognized in prompt. You do not have information about any specific game. Wait for the user."
+                            
+                        # Convert history to Gemini format (excluding system instructions which are handled above)
+                        history = []
+                        for msg in st.session_state.messages[:-1]: # Don't include the immediate prompt just yet
+                             role = "user" if msg["role"] == "user" else "model"
+                             history.append({"role": role, "parts": [msg["content"]]})
+                             
+                        model = genai.GenerativeModel(
+                            model_name="gemini-2.5-flash",
+                            system_instruction=system_context + data_context
+                        )
+                             
+                        chat = model.start_chat(history=history)
+                        response = chat.send_message(prompt)
+                        
+                        st.markdown(response.text)
+                        st.session_state.messages.append({"role": "model", "content": response.text})
+                    except Exception as e:
+                        st.error(f"Error generating response: {e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 2: Model Insights (Ablation Study)

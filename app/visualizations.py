@@ -68,7 +68,6 @@ def team_comparison_chart(match_row: pd.Series, home_name: str, away_name: str) 
     """Grouped bar chart comparing key team stats for home vs away."""
     metrics = {
         "Goals/Game": ("goals_per_game_home", "goals_per_game_away"),
-        "ELO": ("elo_home", "elo_away"),
         "Form": ("form_home", "form_away"),
         "League Position": ("league_position_home", "league_position_away"),
     }

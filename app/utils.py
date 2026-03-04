@@ -9,6 +9,8 @@ from functools import lru_cache
 import joblib
 import numpy as np
 import pandas as pd
+import requests
+import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 SAVED_MODELS_DIR = ROOT / "models" / "ml_classification" / "saved_models"
@@ -79,14 +81,48 @@ def predict_match_outcome(match_row: pd.Series, model_name: str = "xgboost", use
     }
 
 
-def get_all_teams() -> list[str]:
-    """Return sorted list of unique team names (home + away combined)."""
-    df = load_feature_matrix()
-    if df is None:
-        return []
-    teams = set()
-    if "home_team" in df.columns:
-        teams.update(df["home_team"].dropna().unique())
-    if "away_team" in df.columns:
-        teams.update(df["away_team"].dropna().unique())
-    return sorted(teams)
+def get_team_id_mapping() -> dict[str, int]:
+    """Returns a mapping of team names to their football-data.org IDs."""
+
+    
+    LEAGUES = {"PL": "Premier League", "PD": "La Liga", 
+               "BL1": "Bundesliga", "SA": "Serie A", "FL1": "Ligue 1"}
+    headers = {"X-Auth-Token": st.secrets["FOOTBALL_DATA_API_KEY"]}
+    mapping = {}
+    
+    for code in LEAGUES.keys():
+        url = f"https://api.football-data.org/v4/competitions/{code}/teams"
+        try:
+            resp = requests.get(url, headers=headers).json()
+            for t in resp.get("teams", []):
+                mapping[t["name"]] = t["id"]
+        except Exception:
+            pass
+    return mapping
+
+@st.cache_data(ttl=86400)
+def get_current_teams() -> dict[str, list[str]]:
+    """Returns a dictionary of leagues to lists of current team names."""
+
+    
+    LEAGUES = {"PL": "Premier League", "PD": "La Liga", 
+               "BL1": "Bundesliga", "SA": "Serie A", "FL1": "Ligue 1"}
+    headers = {"X-Auth-Token": st.secrets["FOOTBALL_DATA_API_KEY"]}
+    teams = {}
+    
+    for code, name in LEAGUES.items():
+        url = f"https://api.football-data.org/v4/competitions/{code}/teams"
+        try:
+            resp = requests.get(url, headers=headers).json()
+            teams[name] = sorted([t["name"] for t in resp.get("teams", [])])
+        except Exception:
+            # Fallback to CSV if API fails/rate limits
+            df = load_feature_matrix()
+            if df is not None:
+                t_set = set(df[df["competition"] == name]["home_team"].dropna().unique())
+                t_set.update(df[df["competition"] == name]["away_team"].dropna().unique())
+                teams[name] = sorted(list(t_set))
+            else:
+                teams[name] = []
+                
+    return teams
