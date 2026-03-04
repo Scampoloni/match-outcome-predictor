@@ -1,22 +1,26 @@
 """
 Collect pre-match news articles for sentiment analysis.
 
-Fetches news articles from NewsAPI (and optional web scraping) for matches
-in the dataset. Articles are stored as JSON for NLP processing.
+Uses multiple strategies:
+  1. NewsAPI (works for matches within last 30 days)
+  2. The Guardian Open API (free, unlimited archive)
+  3. Google News RSS (no key needed, good coverage)
 
 Usage:
     python data/scrapers/collect_news.py
-    python data/scrapers/collect_news.py --matches data/raw/matches_raw.csv --limit 200
+    python data/scrapers/collect_news.py --limit 300
 """
 
 import argparse
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
+from urllib.parse import quote_plus
 
 import pandas as pd
 import requests
@@ -25,18 +29,15 @@ from bs4 import BeautifulSoup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# Load API key
-NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-if not NEWS_API_KEY:
-    try:
-        from dotenv import load_dotenv
+# Load API keys
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-        load_dotenv()
-        NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-    except ImportError:
-        pass
-
-NEWS_API_URL = "https://newsapi.org/v2/everything"
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
+GUARDIAN_API_KEY = os.getenv("GUARDIAN_API_KEY", "test")  # "test" is the free tier key
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "raw"
 OUT_FILE = RAW_DIR / "news_articles.json"
@@ -50,32 +51,32 @@ HEADERS = {
 }
 
 
+def _simplify_team(name: str) -> str:
+    """Remove common suffixes for better search results."""
+    for suffix in [" FC", "FC ", " CF", "CF ", " SC", "SC "]:
+        name = name.replace(suffix, "")
+    return name.strip()
+
+
+# ── Source 1: NewsAPI ─────────────────────────────────────────────────────────
+
 def get_articles_newsapi(
     home_team: str, away_team: str, match_date: str, days_before: int = 7
 ) -> List[Dict]:
-    """
-    Fetch news articles about a match from NewsAPI.
-
-    Args:
-        home_team: Home team name
-        away_team: Away team name
-        match_date: Match date (ISO format)
-        days_before: How many days before the match to search
-
-    Returns:
-        List of article dictionaries
-    """
+    """Fetch from NewsAPI (only works for recent matches ~30 days)."""
     if not NEWS_API_KEY:
         return []
 
-    match_dt = datetime.fromisoformat(match_date.replace("Z", "+00:00").split("T")[0])
+    try:
+        match_dt = datetime.fromisoformat(match_date.replace("Z", "+00:00").split("T")[0])
+    except ValueError:
+        match_dt = datetime.strptime(match_date[:10], "%Y-%m-%d")
+
     from_date = match_dt - timedelta(days=days_before)
     to_date = match_dt - timedelta(days=1)
 
-    # Simplify team names for search (remove FC, etc.)
-    home_simple = home_team.replace(" FC", "").replace("FC ", "")
-    away_simple = away_team.replace(" FC", "").replace("FC ", "")
-
+    home_simple = _simplify_team(home_team)
+    away_simple = _simplify_team(away_team)
     query = f'"{home_simple}" AND "{away_simple}"'
 
     params = {
@@ -89,86 +90,122 @@ def get_articles_newsapi(
     }
 
     try:
-        response = requests.get(NEWS_API_URL, params=params, timeout=15)
-        response.raise_for_status()
+        resp = requests.get("https://newsapi.org/v2/everything", params=params, timeout=15)
+        if resp.status_code == 426:  # "Upgrade required" = date too old
+            return []
+        resp.raise_for_status()
+        articles = resp.json().get("articles", [])
+        time.sleep(0.5)
+        return articles
+    except requests.exceptions.RequestException as e:
+        logger.debug("NewsAPI: %s", e)
+        return []
 
-        articles = response.json().get("articles", [])
-        logger.info(
-            "  NewsAPI: %d articles for %s vs %s", len(articles), home_simple, away_simple
-        )
+
+# ── Source 2: The Guardian Open Platform ──────────────────────────────────────
+
+def get_articles_guardian(
+    home_team: str, away_team: str, match_date: str, days_before: int = 7
+) -> List[Dict]:
+    """Fetch from The Guardian API (free 'test' key, full archive)."""
+    try:
+        match_dt = datetime.fromisoformat(match_date.replace("Z", "+00:00").split("T")[0])
+    except ValueError:
+        match_dt = datetime.strptime(match_date[:10], "%Y-%m-%d")
+
+    from_date = match_dt - timedelta(days=days_before)
+    to_date = match_dt - timedelta(days=1)
+
+    home_simple = _simplify_team(home_team)
+    away_simple = _simplify_team(away_team)
+
+    params = {
+        "q": f"{home_simple} {away_simple}",
+        "section": "football",
+        "from-date": from_date.strftime("%Y-%m-%d"),
+        "to-date": to_date.strftime("%Y-%m-%d"),
+        "page-size": 5,
+        "show-fields": "bodyText,headline",
+        "order-by": "relevance",
+        "api-key": GUARDIAN_API_KEY,
+    }
+
+    try:
+        resp = requests.get("https://content.guardianapis.com/search", params=params, timeout=15)
+        resp.raise_for_status()
+        results = resp.json().get("response", {}).get("results", [])
+
+        articles = []
+        for r in results:
+            body = r.get("fields", {}).get("bodyText", "")
+            if body and len(body) > 100:
+                articles.append({
+                    "title": r.get("fields", {}).get("headline", r.get("webTitle", "")),
+                    "content": body,
+                    "url": r.get("webUrl", ""),
+                    "source": {"name": "The Guardian"},
+                    "publishedAt": r.get("webPublicationDate", ""),
+                })
+
+        time.sleep(0.5)
+        return articles
+
+    except requests.exceptions.RequestException as e:
+        logger.debug("Guardian: %s", e)
+        return []
+
+
+# ── Source 3: Google News RSS ─────────────────────────────────────────────────
+
+def get_articles_google_news(home_team: str, away_team: str) -> List[Dict]:
+    """Scrape Google News RSS feed (no API key needed)."""
+    home_simple = _simplify_team(home_team)
+    away_simple = _simplify_team(away_team)
+    query = quote_plus(f"{home_simple} vs {away_simple} preview")
+
+    url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml-xml")
+
+        articles = []
+        items = soup.find_all("item")[:5]
+
+        for item in items:
+            title = item.find("title")
+            link = item.find("link")
+            pub_date = item.find("pubDate")
+            source_tag = item.find("source")
+
+            if title:
+                articles.append({
+                    "title": title.get_text(strip=True),
+                    "content": title.get_text(strip=True),  # RSS only gives title
+                    "url": link.get_text(strip=True) if link else "",
+                    "source": {"name": source_tag.get_text(strip=True) if source_tag else "Google News"},
+                    "publishedAt": pub_date.get_text(strip=True) if pub_date else "",
+                })
 
         time.sleep(1)
         return articles
 
-    except requests.exceptions.RequestException as e:
-        logger.warning("NewsAPI error for %s vs %s: %s", home_team, away_team, e)
+    except Exception as e:
+        logger.debug("Google News RSS: %s", e)
         return []
 
 
-def scrape_bbc_preview(home_team: str, away_team: str) -> List[Dict]:
-    """
-    Scrape match preview from BBC Sport (fallback if NewsAPI unavailable).
-
-    Args:
-        home_team: Home team name
-        away_team: Away team name
-
-    Returns:
-        List of article dictionaries
-    """
-    query = f"{home_team} {away_team}".replace(" ", "+")
-    url = f"https://www.bbc.co.uk/search?q={query}&filter=sport"
-
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "lxml")
-
-        articles = []
-        links = soup.select("a[href*='/sport/football/']")[:3]
-
-        for link in links:
-            href = link.get("href", "")
-            if not href.startswith("http"):
-                href = "https://www.bbc.co.uk" + href
-
-            try:
-                art_resp = requests.get(href, headers=HEADERS, timeout=10)
-                art_soup = BeautifulSoup(art_resp.text, "lxml")
-
-                # Extract article text
-                container = art_soup.select_one("article") or art_soup.select_one('[role="main"]')
-                if container:
-                    text = " ".join(p.get_text(strip=True) for p in container.find_all("p"))
-                    if len(text) > 100:
-                        articles.append(
-                            {
-                                "title": art_soup.title.get_text(strip=True) if art_soup.title else "",
-                                "content": text,
-                                "url": href,
-                                "source": {"name": "BBC Sport"},
-                                "publishedAt": datetime.utcnow().isoformat(),
-                            }
-                        )
-                time.sleep(2)
-            except Exception:
-                continue
-
-        return articles
-
-    except requests.exceptions.RequestException as e:
-        logger.warning("BBC scraping failed: %s", e)
-        return []
-
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    """Main news collection pipeline."""
+    """Main news collection pipeline with multi-source fallback."""
     parser = argparse.ArgumentParser(description="Collect pre-match news articles.")
     parser.add_argument(
         "--matches", type=Path, default=RAW_DIR / "matches_raw.csv",
         help="Path to matches CSV"
     )
-    parser.add_argument("--limit", type=int, default=100, help="Max matches to process")
+    parser.add_argument("--limit", type=int, default=200, help="Max matches to process")
     parser.add_argument("--days-before", type=int, default=7, help="Days before match to search")
     args = parser.parse_args()
 
@@ -185,39 +222,49 @@ def main():
         logger.info("Sampled %d matches for article collection", args.limit)
 
     all_articles = []
+    matches_with_articles = 0
 
-    for idx, match in matches_df.iterrows():
-        logger.info(
-            "Processing %d/%d: %s vs %s (%s)",
-            idx + 1, len(matches_df),
-            match["home_team"], match["away_team"],
-            match.get("date", "unknown date"),
-        )
+    for idx, (_, match) in enumerate(matches_df.iterrows()):
+        home = match["home_team"]
+        away = match["away_team"]
+        date_str = str(match.get("date", ""))
 
-        # Try NewsAPI first
-        articles = get_articles_newsapi(
-            match["home_team"], match["away_team"],
-            str(match["date"]), days_before=args.days_before,
-        )
+        if (idx + 1) % 20 == 0:
+            logger.info(
+                "Progress: %d/%d matches processed (%d articles so far)",
+                idx + 1, len(matches_df), len(all_articles)
+            )
 
-        # Fallback to BBC scraping
-        if not articles and not NEWS_API_KEY:
-            articles = scrape_bbc_preview(match["home_team"], match["away_team"])
+        # Try sources in order of quality
+        articles = []
+
+        # 1. Guardian API (best for historical, full article text)
+        if not articles:
+            articles = get_articles_guardian(home, away, date_str, args.days_before)
+
+        # 2. NewsAPI (works for recent matches)
+        if not articles:
+            articles = get_articles_newsapi(home, away, date_str, args.days_before)
+
+        # 3. Google News RSS (fallback, titles only)
+        if not articles:
+            articles = get_articles_google_news(home, away)
+
+        if articles:
+            matches_with_articles += 1
 
         for article in articles:
-            all_articles.append(
-                {
-                    "match_id": match.get("match_id"),
-                    "home_team": match["home_team"],
-                    "away_team": match["away_team"],
-                    "match_date": str(match["date"]),
-                    "article_title": article.get("title"),
-                    "article_content": article.get("content") or article.get("description", ""),
-                    "article_url": article.get("url"),
-                    "published_at": article.get("publishedAt"),
-                    "source": article.get("source", {}).get("name", "unknown"),
-                }
-            )
+            all_articles.append({
+                "match_id": match.get("match_id"),
+                "home_team": home,
+                "away_team": away,
+                "match_date": date_str,
+                "article_title": article.get("title", ""),
+                "article_content": article.get("content") or article.get("description", ""),
+                "article_url": article.get("url", ""),
+                "published_at": article.get("publishedAt", ""),
+                "source": article.get("source", {}).get("name", "unknown"),
+            })
 
     # Save
     RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -228,7 +275,10 @@ def main():
     logger.info("NEWS COLLECTION SUMMARY")
     logger.info("=" * 50)
     logger.info("Total articles: %d", len(all_articles))
-    logger.info("Matches covered: %d", len(set(a["match_id"] for a in all_articles if a.get("match_id"))))
+    logger.info("Matches with articles: %d / %d (%.1f%%)",
+                matches_with_articles, len(matches_df),
+                matches_with_articles / max(len(matches_df), 1) * 100)
+    logger.info("Sources: %s", dict(pd.Series([a["source"] for a in all_articles]).value_counts()))
     logger.info("Saved to: %s", OUT_FILE)
 
 
