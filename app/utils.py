@@ -81,6 +81,7 @@ def predict_match_outcome(match_row: pd.Series, model_name: str = "xgboost", use
     }
 
 
+@st.cache_data(ttl=86400)
 def get_team_id_mapping() -> dict[str, int]:
     """Returns a mapping of team names to their football-data.org IDs."""
 

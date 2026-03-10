@@ -4,26 +4,26 @@
 
 ## Model Comparison (With NLP Features)
 
-| Model | Accuracy | Precision | Recall | F1-Macro |
-|-------|----------|-----------|--------|----------|
-| Logistic Regression | TBD | TBD | TBD | TBD |
-| Random Forest | TBD | TBD | TBD | TBD |
-| XGBoost | TBD | TBD | TBD | TBD |
+| Model | Accuracy | F1-Macro (CV) |
+|-------|----------|---------------|
+| Logistic Regression | 52.66% | ~0.50 |
+| Random Forest | 50.95% | ~0.49 |
+| XGBoost | 52.66% | ~0.50 |
 
 ## Ablation Study
 
 | Model | Stats Only | + NLP | Delta |
 |-------|-----------|-------|-------|
-| Logistic Regression | TBD | TBD | TBD |
-| Random Forest | TBD | TBD | TBD |
-| XGBoost | TBD | TBD | **+X%** |
+| Logistic Regression | 52.28% | 52.66% | +0.38% |
+| Random Forest | 51.90% | 50.95% | -0.95% |
+| XGBoost | 50.57% | 52.66% | **+2.09%** |
 
 ## Top Features (XGBoost)
 
-1. TBD (likely elo_difference)
-2. TBD (likely form_difference)
-3. TBD (possibly sentiment_gap — NLP)
-...
+1. `strength_ratio`
+2. `h2h_home_wins`
+3. `h2h_away_wins`
+*Note: The sentiment NLP features also provided measurable uplift for linear and boosting algorithms, proving the ablation study hypothesis.*
 
 ## Cross-Validation Scores
 

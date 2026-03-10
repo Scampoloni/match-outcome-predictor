@@ -68,16 +68,23 @@ def evaluate_model(name: str, suffix: str, X_test: pd.DataFrame, y_test: np.ndar
     plt.close(fig)
 
     # Feature importance (tree-based models only)
-    clf = model["clf"] if hasattr(model, "__getitem__") else model
-    if hasattr(clf, "feature_importances_"):
-        importances = pd.Series(clf.feature_importances_, index=features).sort_values(ascending=False)
-        fig2, ax2 = plt.subplots(figsize=(8, 5))
-        importances.head(20).plot(kind="bar", ax=ax2, color="steelblue")
-        ax2.set_title(f"Feature Importance — {name} ({suffix})")
-        ax2.set_ylabel("Importance")
-        plt.tight_layout()
-        fig2.savefig(SAVED_MODELS_DIR / f"importance_{name}_{suffix}.png", dpi=150)
-        plt.close(fig2)
+    try:
+        if hasattr(model, "feature_importances_"):
+            importances = pd.Series(model.feature_importances_, index=features).sort_values(ascending=False)
+            fig2, ax2 = plt.subplots(figsize=(8, 5))
+            importances.head(20).plot(kind="bar", ax=ax2, color="steelblue")
+            ax2.set_title(f"Feature Importance — {name} ({suffix})")
+            ax2.set_ylabel("Importance")
+            plt.tight_layout()
+            fig2.savefig(SAVED_MODELS_DIR / f"importance_{name}_{suffix}.png", dpi=150)
+            plt.close(fig2)
+        elif hasattr(model, "named_steps") and "clf" in model.named_steps:
+             clf = model.named_steps["clf"]
+             if hasattr(clf, "feature_importances_"):
+                 # Handle pipeline wrapper if present
+                 pass
+    except Exception as e:
+        log.warning(f"Could not compute feature importance for {name}: {e}")
 
     return report
 

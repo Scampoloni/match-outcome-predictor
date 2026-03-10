@@ -14,6 +14,7 @@ import joblib
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -90,7 +91,7 @@ def load_data(use_nlp: bool = True) -> tuple[pd.DataFrame, pd.Series]:
 
 def encode_labels(y: pd.Series) -> tuple[pd.Series, LabelEncoder]:
     le = LabelEncoder()
-    le.classes_ = pd.array(LABEL_ORDER)
+    le.fit(LABEL_ORDER)  # Safer than manually setting classes_
     y_enc = le.transform(y)
     return pd.Series(y_enc, name=TARGET), le
 

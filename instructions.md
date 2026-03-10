@@ -1,4 +1,4 @@
-# INSTRUCTIONS.md - Player Performance Predictor
+# INSTRUCTIONS.md - Match Outcome Predictor
 
 **⚠️ CRITICAL: READ THIS ENTIRE FILE BEFORE MAKING ANY CHANGES TO THE PROJECT**
 
@@ -377,7 +377,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 logger.info("Starting data collection...")
-logger.warning("Missing sentiment data for 5 players")
+logger.warning("Missing sentiment data for 5 matches")
 logger.error("Failed to load model checkpoint")
 ```
 
@@ -939,7 +939,7 @@ def test_sentiment_output_range():
     """Validate sentiment scores are in [-1, 1]."""
     from models.nlp_analysis.sentiment_analyzer import analyze_sentiment
     
-    test_text = "This player is absolutely amazing!"
+    test_text = "The team is in great form and confident!"
     score = analyze_sentiment(test_text)
     
     assert -1 <= score <= 1
@@ -1067,7 +1067,7 @@ Types:
 
 Examples:
   git commit -m "feat: add sentiment analysis pipeline"
-  git commit -m "fix: handle missing player data gracefully"
+  git commit -m "fix: handle missing match data gracefully"
   git commit -m "docs: update methodology with NLP details"
   git commit -m "refactor: optimize feature extraction loop"
 ```
