@@ -32,12 +32,39 @@ def load_feature_matrix() -> pd.DataFrame | None:
     return pd.read_csv(path)
 
 
+XGBOOST_FEATURES = [
+    "elo_difference", "form_difference", "goals_per_game_home", "goals_per_game_away",
+    "goals_conceded_per_game_home", "goals_conceded_per_game_away", "home_advantage_score",
+    "h2h_home_wins", "h2h_away_wins", "h2h_draws", "league_position_home",
+    "league_position_away", "days_since_last_match_home", "days_since_last_match_away",
+    "strength_ratio", "goal_difference_delta", "sentiment_gap", "confidence_score_home",
+    "confidence_score_away", "injury_concern_score_home", "injury_concern_score_away",
+    "hype_level",
+]
+
+
 @lru_cache(maxsize=4)
 def load_model(name: str = "xgboost", suffix: str = "with_nlp") -> dict | None:
-    path = SAVED_MODELS_DIR / f"{name}_{suffix}.pkl"
-    if not path.exists():
-        return None
-    return joblib.load(path)
+    # Try .pkl first (local dev), then .json (committed to repo for Cloud)
+    pkl_path = SAVED_MODELS_DIR / f"{name}_{suffix}.pkl"
+    if pkl_path.exists():
+        return joblib.load(pkl_path)
+
+    if name == "xgboost":
+        json_path = SAVED_MODELS_DIR / f"{name}_{suffix}.json"
+        if json_path.exists():
+            try:
+                from xgboost import XGBClassifier
+                from sklearn.preprocessing import LabelEncoder
+                clf = XGBClassifier()
+                clf.load_model(str(json_path))
+                le = LabelEncoder()
+                le.classes_ = np.array(["Away Win", "Draw", "Home Win"])
+                return {"model": clf, "label_encoder": le, "features": XGBOOST_FEATURES}
+            except Exception:
+                pass
+
+    return None
 
 
 def load_match_data(home_team: str, away_team: str) -> pd.Series | None:

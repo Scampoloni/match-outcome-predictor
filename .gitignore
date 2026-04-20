@@ -20,12 +20,14 @@ data/processed/*
 !data/processed/.gitkeep
 *.csv
 *.json
+!models/ml_classification/saved_models/xgboost_with_nlp.json
 *.parquet
 *.feather
 
 # Models
 models/ml_classification/saved_models/*
 !models/ml_classification/saved_models/.gitkeep
+!models/ml_classification/saved_models/xgboost_with_nlp.json
 models/computer_vision/saved_models/*
 !models/computer_vision/saved_models/.gitkeep
 *.pkl
