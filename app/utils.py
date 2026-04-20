@@ -94,8 +94,8 @@ def predict_match_outcome(match_row: pd.Series, model_name: str = "xgboost", use
     le = bundle["label_encoder"]
     features = bundle["features"]
 
-    X = match_row[features].fillna(0).values.reshape(1, -1)
-    X = pd.DataFrame(X, columns=features)
+    X = pd.DataFrame([{f: match_row.get(f, 0) for f in features}])
+    X = X.fillna(0).astype(float)
 
     proba = model.predict_proba(X)[0]
     pred_idx = int(np.argmax(proba))
