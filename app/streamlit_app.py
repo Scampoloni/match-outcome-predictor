@@ -15,9 +15,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def get_secret(key: str) -> str | None:
+    """Read from st.secrets (Streamlit Cloud) with fallback to environment variables."""
+    try:
+        return st.secrets[key]
+    except (KeyError, FileNotFoundError):
+        return os.getenv(key)
+
+
 # Configure Gemini
-if os.getenv("GEMINI_API_KEY"):
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_key = get_secret("GEMINI_API_KEY")
+if gemini_key:
+    genai.configure(api_key=gemini_key)
 
 
 # Allow imports from app/ and models/
@@ -360,9 +370,9 @@ elif page == "💬 AI Assistant":
     st.title("💬 Football AI Assistant")
     st.caption("Ask anything about upcoming matches! e.g., 'Who will win Juventus vs Napoli on 05.03.2026?'")
 
-    if not os.getenv("GEMINI_API_KEY"):
-        st.warning("⚠️ GEMINI_API_KEY is missing in your .env file. The chat feature requires it.")
-        st.info("Retrieve an API key from Google AI Studio and add `GEMINI_API_KEY=your-key` to your `.env` file.")
+    if not get_secret("GEMINI_API_KEY"):
+        st.warning("⚠️ GEMINI_API_KEY is not configured. The chat feature requires it.")
+        st.info("Add `GEMINI_API_KEY` to your Streamlit secrets (Cloud) or `.env` file (local).")
     else:
         # Initialize chat history
         if "messages" not in st.session_state:
