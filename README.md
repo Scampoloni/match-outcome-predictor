@@ -2,6 +2,7 @@
 
 Predicts football match outcomes (Home Win / Draw / Away Win) by combining team statistics, ELO ratings, and pre-match news sentiment — served through an interactive Streamlit dashboard with a built-in AI chat assistant.
 
+[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://match-outcome-predictor.streamlit.app/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
