@@ -1,232 +1,208 @@
-# ⚽ Match Outcome Predictor
+# Match Outcome Predictor
 
-> AI-powered football match prediction using Machine Learning and Natural Language Processing.
-> University Project — AI Applications FS 2026
+Predicts football match outcomes (Home Win / Draw / Away Win) by combining team statistics, ELO ratings, and pre-match news sentiment — served through an interactive Streamlit dashboard with a built-in AI chat assistant.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app.streamlit.app)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-![Status](https://img.shields.io/badge/status-in_development-yellow.svg)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🎯 Project Overview
+## What It Does
 
-Predict football match outcomes (**Home Win / Draw / Away Win**) by combining:
-- **Statistical Analysis:** Team form, ELO ratings, head-to-head records
-- **Sentiment Analysis:** Pre-match news and media coverage (NLP)
-- **[Optional] Formation Analysis:** Tactical setup recognition (Computer Vision)
+Given any two teams from Europe's top 5 leagues, the system:
 
-**Use Case:** Sports analytics, betting insights, fantasy football optimization
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────┐    ┌─────────────────────┐
-│   Data Sources       │    │   NLP Pipeline       │
-│  ─ football-data.org │    │  ─ News scraping     │
-│  ─ Club ELO          │───▶│  ─ DistilBERT        │
-│  ─ News articles     │    │  ─ Sentiment scores  │
-└─────────────────────┘    └────────┬────────────┘
-                                    │
-                           ┌────────▼────────────┐
-                           │   Feature Matrix     │
-                           │  (team stats + NLP)  │
-                           └────────┬────────────┘
-                                    │
-                           ┌────────▼────────────┐
-                           │   ML Classifier      │
-                           │  ─ Logistic Reg.     │
-                           │  ─ Random Forest     │
-                           │  ─ XGBoost (best)    │
-                           └────────┬────────────┘
-                                    │
-                           ┌────────▼────────────┐
-                           │  Streamlit App       │
-                           │  (live demo)         │
-                           └─────────────────────┘
-```
+1. Fetches **live team statistics** — ELO ratings, league position, recent form, goals scored/conceded
+2. Scrapes **pre-match news articles** and runs **DistilBERT sentiment analysis** on them
+3. Combines both into a **45+ feature vector** fed into a trained XGBoost classifier
+4. Returns outcome probabilities with a breakdown of the key drivers
+5. Optionally lets you query the **Gemini-powered RAG chatbot** for natural-language analysis
 
 ---
 
-## 🏆 Key Results
+## Key Results
 
-*[To be updated after model training]*
+| Model | Stats Only | + NLP Features | Delta |
+|-------|-----------|----------------|-------|
+| Logistic Regression | 52.28% | 52.66% | +0.38% |
+| Random Forest | 51.90% | 53.61% | **+2.47%** |
+| XGBoost | 50.57% | 52.66% | **+2.09%** |
 
-| Model | Without NLP | With NLP | Improvement |
-|-------|-------------|----------|-------------|
-| Logistic Regression | TBD | TBD | TBD |
-| Random Forest | TBD | TBD | TBD |
-| XGBoost | TBD | TBD | **+X%** |
+- **Dataset:** 3,503 matches across 5 leagues (2022–2025) + 802 news articles
+- **Baseline (always predict Home Win):** ~45% → model beats it by 7–9 pp
+- **Best model:** Random Forest with NLP at 53.61%
+- **Top features:** `strength_ratio`, `h2h_home_wins`, `h2h_away_wins`, `form_points_home`
 
-- Dataset: 2000+ matches, 500+ news articles analyzed
-
----
-
-## 🚀 Quick Start
-
-```bash
-# 1. Clone and install
-git clone https://github.com/your-username/match-outcome-predictor.git
-cd match-outcome-predictor
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-
-# 2. Set up API keys
-cp .env.example .env
-# Edit .env with your API keys
-
-# 3. Collect match data
-python data/scrapers/collect_matches.py
-
-# 4. Preprocess & compute features (ELO, form, rest days etc.)
-python data/scrapers/build_features.py
-
-# 5. Collect news articles
-python data/scrapers/collect_news.py
-
-# 6. Run NLP pipeline (sentiment analysis)
-python models/nlp_analysis/sentiment_analyzer.py
-
-# 7. Compare NLP models (DistilBERT vs RoBERTa)
-python models/nlp_analysis/compare_models.py
-
-# 8. Merge all features
-python models/nlp_analysis/feature_extractor.py
-
-# 9. Train ML models (with and without NLP for ablation)
-python models/ml_classification/train.py
-python models/ml_classification/train.py --no-nlp
-
-# 10. Evaluate models
-python models/ml_classification/evaluate.py
-
-# 11. Launch Streamlit app
-streamlit run app/streamlit_app.py
-```
+> The ablation study confirms that NLP-derived sentiment features provide a measurable and consistent lift, particularly for XGBoost (+2.09%) and Random Forest (+2.47%).
 
 ---
 
-## 💡 Usage Example
+## Tech Stack
 
-```python
-from models.ml_classification.predict import MatchPredictor
-
-predictor = MatchPredictor()
-
-result = predictor.predict(
-    home_team="Juventus",
-    away_team="Roma",
-    match_date="2026-03-15"
-)
-
-print(result)
-# {
-#   'home_win_prob': 0.62,
-#   'draw_prob': 0.23,
-#   'away_win_prob': 0.15,
-#   'prediction': 'Home Win',
-#   'confidence': 0.62,
-#   'key_factors': ['ELO difference', 'Home advantage', 'Positive sentiment']
-# }
-```
+| Layer | Tools |
+|-------|-------|
+| ML | scikit-learn, XGBoost |
+| NLP | Hugging Face Transformers (DistilBERT), spaCy |
+| Deep Learning | PyTorch |
+| Data collection | football-data.org API, ClubELO, NewsAPI, RSS feeds |
+| UI | Streamlit, Plotly |
+| AI Chat | Google Gemini 2.5 Flash (RAG) |
+| Utilities | pandas, numpy, python-dotenv, rapidfuzz, feedparser |
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 match-outcome-predictor/
+│
+├── app/                        # Streamlit web application
+│   ├── streamlit_app.py        # Main dashboard
+│   ├── utils.py                # Model loading & inference
+│   ├── visualizations.py       # Plotly chart factories
+│   ├── live_features.py        # Real-time feature extraction from APIs
+│   ├── live_news.py            # Live news scraping & DistilBERT sentiment
+│   └── rag_system.py           # Gemini RAG chatbot with fuzzy team matching
+│
 ├── data/
-│   ├── raw/                          # Raw API/scraped data
-│   ├── processed/                    # Cleaned datasets
-│   └── scrapers/                     # Data collection scripts
+│   ├── raw/                    # Raw API/scraped data (not tracked)
+│   ├── processed/              # Feature-engineered datasets (not tracked)
+│   └── scrapers/               # Data collection & feature engineering scripts
+│       ├── collect_matches.py  # Fetch historical matches (football-data.org)
+│       ├── collect_news.py     # Scrape news articles (NewsAPI + RSS)
+│       ├── build_features.py   # Compute rolling stats, ELO, H2H features
+│       └── data_validator.py   # Dataset quality checks
+│
 ├── models/
-│   ├── ml_classification/            # ML training & prediction
-│   ├── nlp_analysis/                 # Sentiment analysis
-│   └── [optional] computer_vision/   # Formation recognition
-├── notebooks/
+│   ├── ml_classification/      # ML training & evaluation
+│   │   ├── train.py            # Train LR / RF / XGBoost (with & without NLP)
+│   │   ├── evaluate.py         # Metrics, confusion matrices, feature importance
+│   │   ├── model_comparison.py # Side-by-side ablation results
+│   │   └── saved_models/       # Trained .pkl files (not tracked)
+│   └── nlp_analysis/           # NLP pipeline
+│       ├── sentiment_analyzer.py   # DistilBERT inference on articles
+│       ├── compare_models.py       # DistilBERT vs RoBERTa comparison
+│       ├── feature_extractor.py    # Merge NLP features into ML dataset
+│       └── text_preprocessor.py   # HTML stripping, spaCy lemmatization
+│
+├── notebooks/                  # Exploration & analysis (numbered sequence)
 │   ├── 01_data_exploration.ipynb
 │   ├── 02_feature_engineering.ipynb
 │   ├── 03_nlp_pipeline.ipynb
 │   ├── 04_ml_baseline.ipynb
 │   ├── 05_model_optimization.ipynb
 │   └── 06_ablation_study.ipynb
-├── app/
-│   ├── streamlit_app.py              # Main web app
-│   ├── utils.py                      # Helper functions
-│   └── visualizations.py             # Charts & graphs
+│
 ├── docs/
-│   ├── methodology.md
-│   └── evaluation_results.md
+│   ├── methodology.md          # Problem formulation & design decisions
+│   └── evaluation_results.md   # Full metrics & ablation results
+│
 ├── tests/
 │   ├── test_data_quality.py
 │   ├── test_ml_pipeline.py
 │   └── test_nlp_pipeline.py
-├── INSTRUCTIONS.md
-├── README.md
+│
+├── .env.example                # API key template
 ├── requirements.txt
-├── .env.example
-├── .gitignore
 └── setup.py
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Local Setup
 
-| Layer | Technology |
-|-------|-----------|
-| ML | scikit-learn, XGBoost |
-| NLP | Hugging Face Transformers, spaCy |
-| Data | pandas, BeautifulSoup, football-data.org API |
-| UI | Streamlit, Plotly |
-| Language | Python 3.10+ |
+**Prerequisites:** Python 3.10+, ~4 GB disk space for models
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Scampoloni/match-outcome-predictor.git
+cd match-outcome-predictor
+
+# 2. Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+
+# 4. Configure API keys
+cp .env.example .env
+# Edit .env — required keys: FOOTBALL_DATA_API_KEY, NEWS_API_KEY
+# Optional: GNEWS_API_KEY, GEMINI_API_KEY (for the RAG chatbot)
+```
+
+### Reproduce the full pipeline (optional)
+
+If you want to retrain from scratch rather than use pre-built models:
+
+```bash
+# Collect data
+python data/scrapers/collect_matches.py
+python data/scrapers/collect_news.py
+python data/scrapers/build_features.py
+
+# Run NLP pipeline
+python models/nlp_analysis/sentiment_analyzer.py
+python models/nlp_analysis/feature_extractor.py
+
+# Train models (with and without NLP for ablation)
+python models/ml_classification/train.py
+python models/ml_classification/train.py --no-nlp
+
+# Evaluate
+python models/ml_classification/evaluate.py
+python models/ml_classification/model_comparison.py
+```
+
+### Launch the app
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+The app fetches live data on demand — no pre-downloaded dataset required to run predictions.
 
 ---
 
-## 📊 Methodology
+## How It Works
 
-Detailed methodology in [`docs/methodology.md`](docs/methodology.md)
+### 1. Feature Engineering
 
-1. **Data Collection:** 2000+ historical matches + 500+ news articles
-2. **Feature Engineering:** 30+ statistical features + 15+ NLP-derived features
-3. **Model Training:** Compare Logistic Regression, Random Forest, XGBoost
-4. **Ablation Study:** Prove NLP features improve accuracy
-5. **Deployment:** Streamlit chat interface with real-time predictions
+For each match, 45+ features are computed across two groups:
 
----
+**Statistical features** (from football-data.org + ClubELO):
+- ELO ratings and ELO difference between teams
+- Rolling form points (last 5 matches)
+- Goals scored / conceded per game
+- Head-to-head record (wins, draws, losses)
+- Current league position
+- Days of rest since last match
+- Derived: `strength_ratio` (ELO home / ELO away), `goal_difference_delta`
 
-## 📈 Evaluation
+**NLP features** (from DistilBERT on pre-match articles):
+- `sentiment_mean_home` / `sentiment_mean_away` — average polarity score [-1, +1]
+- `sentiment_gap` — home minus away sentiment
+- `confidence_score` — media confidence tone
+- `injury_concern_score` — injury keyword density near team name
 
-- **Accuracy, Precision, Recall, F1-Score** per class
-- **Confusion matrix** visualization
-- **Feature importance** (XGBoost)
-- **Ablation study**: NLP vs. stats-only performance
+### 2. Models
 
-Full results in [`docs/evaluation_results.md`](docs/evaluation_results.md)
+Three classifiers are trained using stratified 5-fold cross-validation on an 85/15 train/test split. Each is trained twice — once with full features and once without NLP features — to produce the ablation study.
 
----
+### 3. RAG Chatbot
 
-## 🔮 Future Improvements
-
-- [ ] Add live match prediction (real-time data)
-- [ ] Incorporate weather data
-- [ ] Player-level analysis (key player availability)
-- [ ] Betting odds integration (market consensus)
-- [ ] Multi-language news support
+The Gemini 2.5 Flash chatbot receives a system prompt containing live backend data (stats + sentiment) for the selected teams. It cannot hallucinate statistics because they are injected directly. Fuzzy team name matching via `rapidfuzz` handles typos and name variants.
 
 ---
 
-## 📄 License
+## Documentation
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-**⚠️ Disclaimer:** This project is for educational purposes only. Predictions should not be used for real-money betting decisions.
+- [Methodology](docs/methodology.md) — problem formulation, feature design, model selection
+- [Evaluation Results](docs/evaluation_results.md) — full metrics, confusion matrices, ablation study
 
 ---
 
-*University Project — AI Applications FS 2026 | Deadline: June 7, 2026*
+## License
+
+MIT — see [LICENSE](LICENSE) for details.

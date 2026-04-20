@@ -51,9 +51,11 @@ credentials.json
 secrets.toml
 .streamlit/secrets.toml
 
-# Logs
+# Logs & debug output
 *.log
 logs/
+eval_out.txt
+debug_*.py
 
 # Distribution
 dist/
